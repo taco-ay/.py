@@ -1,5 +1,4 @@
-import os
-import sqlite3 
+import sqlite3
 from config import DATABASE
 
 # Varsayılan veriler
@@ -15,10 +14,6 @@ statuses = [(_,) for _ in [
 class DB_Manager:
     def __init__(self, database):
         self.database = database
-        if not os.path.exists(self.database):
-            self.create_tables()
-            self.default_insert()
-
 
     def create_tables(self):
         conn = sqlite3.connect(self.database)
@@ -30,6 +25,7 @@ class DB_Manager:
                 description TEXT,
                 url TEXT,
                 status_id INTEGER,
+                screenshot TEXT,
                 FOREIGN KEY(status_id) REFERENCES status(status_id)
             )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS skills (
@@ -47,6 +43,16 @@ class DB_Manager:
                 status_name TEXT
             )''')
             conn.commit()
+
+    def add_screenshot_column(self):
+        """Tabloya ekran görüntüsü sütunu ekler (zaten varsa hata vermez)."""
+        conn = sqlite3.connect(self.database)
+        with conn:
+            try:
+                conn.execute("ALTER TABLE projects ADD COLUMN screenshot TEXT")
+                print("✅ screenshot sütunu başarıyla eklendi!")
+            except sqlite3.OperationalError:
+                print("⚠️ screenshot sütunu zaten var, tekrar eklenmedi.")
 
     def __executemany(self, sql, data):
         conn = sqlite3.connect(self.database)
@@ -67,21 +73,33 @@ class DB_Manager:
         sql = 'INSERT OR IGNORE INTO status (status_name) VALUES(?)'
         self.__executemany(sql, statuses)
 
-    def insert_project(self, data):
-        sql = '''INSERT INTO projects (user_id, project_name, description, url, status_id) 
-                 VALUES (?, ?, ?, ?, ?)'''
-        self.__executemany(sql, data)
+    def insert_project(self, user_id, project_name, description, url, status_name, screenshot=None):
+        status_id = self.get_status_id(status_name)
+        if not status_id:
+            raise ValueError("Geçersiz durum adı!")
+        sql = '''INSERT INTO projects (user_id, project_name, description, url, status_id, screenshot)
+                 VALUES (?, ?, ?, ?, ?, ?)'''
+        self.__executemany(sql, [(user_id, project_name, description, url, status_id, screenshot)])
 
     def insert_skill(self, user_id, project_name, skill):
-        sql = 'SELECT project_id FROM projects WHERE project_name = ? AND user_id = ?'
-        project_id = self.__select_data(sql, (project_name, user_id))[0][0]
-        skill_id = self.__select_data('SELECT skill_id FROM skills WHERE skill_name = ?', (skill,))[0][0]
-        data = [(project_id, skill_id)]
+        res = self.__select_data(
+            'SELECT project_id FROM projects WHERE project_name = ? AND user_id = ?',
+            (project_name, user_id)
+        )
+        if not res:
+            raise ValueError("Proje bulunamadı!")
+        project_id = res[0][0]
+
+        res = self.__select_data('SELECT skill_id FROM skills WHERE skill_name = ?', (skill,))
+        if not res:
+            raise ValueError("Beceri bulunamadı!")
+        skill_id = res[0][0]
+
         sql = 'INSERT OR IGNORE INTO project_skills VALUES (?, ?)'
-        self.__executemany(sql, data)
+        self.__executemany(sql, [(project_id, skill_id)])
 
     def get_statuses(self):
-        sql = 'SELECT * FROM status'
+        sql = 'SELECT status_name FROM status'
         return self.__select_data(sql)
 
     def get_status_id(self, status_name):
@@ -109,26 +127,26 @@ class DB_Manager:
         return ', '.join([x[0] for x in res])
 
     def get_project_info(self, user_id, project_name):
-        sql = '''SELECT project_name, description, url, status_name FROM projects 
+        sql = '''SELECT project_name, description, url, status_name, screenshot FROM projects 
                  JOIN status ON status.status_id = projects.status_id 
                  WHERE project_name = ? AND user_id = ?'''
         return self.__select_data(sql, (project_name, user_id))
 
-    def update_projects(self, param, data):
-        sql = f'UPDATE projects SET {param} = ? WHERE project_id = ?'
-        self.__executemany(sql, [data])
+    def update_projects(self, column, value, project_id):
+        if column not in ("project_name", "description", "url", "status_id", "screenshot"):
+            raise ValueError("Geçersiz alan!")
+        sql = f'UPDATE projects SET {column} = ? WHERE project_id = ?'
+        self.__executemany(sql, [(value, project_id)])
 
     def delete_project(self, user_id, project_id):
+        sql = 'DELETE FROM project_skills WHERE project_id = ?'
+        self.__executemany(sql, [(project_id,)])
         sql = 'DELETE FROM projects WHERE user_id = ? AND project_id = ?'
         self.__executemany(sql, [(user_id, project_id)])
 
-    def delete_skill(self, project_id, skill_id):
-        sql = 'DELETE FROM project_skills WHERE project_id = ? AND skill_id = ?'
-        self.__executemany(sql, [(project_id, skill_id)])
 
-
-# Test çalıştırma
 if __name__ == '__main__':
     manager = DB_Manager(DATABASE)
-    manager.insert_project([(1, 'Test Project', 'http://example.com', 1,1)])
-    print(DB_Manager)
+    manager.create_tables()
+    manager.add_screenshot_column()  # Yeni sütunu ekle
+    manager.default_insert() 
