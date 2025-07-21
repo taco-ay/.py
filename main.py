@@ -32,6 +32,7 @@ Kullanabileceğiniz komutlar şunlardır:
 
 Ayrıca, proje adını yazarak projeyle ilgili tüm bilgilere göz atabilirsiniz!""")
 
+# ✅ YENİ PROJE EKLEME
 @bot.command(name='new_project')
 async def new_project(ctx):
     await ctx.send("Lütfen projenin adını girin!")
@@ -40,131 +41,160 @@ async def new_project(ctx):
         return msg.author == ctx.author and msg.channel == ctx.channel
 
     name = await bot.wait_for('message', check=check)
-    data = [ctx.author.id, name.content]
+
+    await ctx.send("Projenin açıklamasını girin (boş bırakabilirsiniz).")
+    desc_msg = await bot.wait_for('message', check=check)
+    description = desc_msg.content if desc_msg.content else ""
+
     await ctx.send("Lütfen projeye ait bağlantıyı gönderin!")
     link = await bot.wait_for('message', check=check)
-    data.append(link.content)
 
     statuses = [x[0] for x in manager.get_statuses()]
-    await ctx.send("Lütfen projenin mevcut durumunu girin!", delete_after=60.0)
-    await ctx.send("\n".join(statuses), delete_after=60.0)
-    
+    await ctx.send("Lütfen projenin mevcut durumunu girin!")
+    await ctx.send("\n".join(statuses))
+
     status = await bot.wait_for('message', check=check)
     if status.content not in statuses:
-        await ctx.send("Seçtiğiniz durum listede bulunmuyor. Lütfen tekrar deneyin!", delete_after=60.0)
+        await ctx.send("Seçtiğiniz durum listede bulunmuyor. Lütfen tekrar deneyin!")
         return
 
-    status_id = manager.get_status_id(status.content)
-    data.append(status_id)
-    manager.insert_project([tuple(data)])
-    await ctx.send("Proje kaydedildi")
+    await ctx.send("Projeye ait ekran görüntüsü bağlantısını gönderin (isterseniz boş bırakabilirsiniz).")
+    screenshot_msg = await bot.wait_for('message', check=check)
+    screenshot = screenshot_msg.content if screenshot_msg.content else None
 
+    manager.insert_project(
+        ctx.author.id,
+        name.content,
+        description,
+        link.content,
+        status.content,
+        screenshot
+    )
+    await ctx.send("✅ Proje başarıyla kaydedildi!")
+
+# ✅ TÜM PROJELERİ LİSTELEME
 @bot.command(name='projects')
 async def get_projects(ctx):
     user_id = ctx.author.id
     projects = manager.get_projects(user_id)
     if projects:
-        text = "\n".join([f"Project name: {x[2]} \nLink: {x[4]}\n" for x in projects])
+        text = "\n".join([
+            f"📌 **{x[2]}**\n📝 Açıklama: {x[3] if x[3] else 'Yok'}\n🔗 Link: {x[4]}\n🖼 Screenshot: {x[6] if x[6] else 'Yok'}\n"
+            for x in projects
+        ])
         await ctx.send(text)
     else:
         await ctx.send('Henüz herhangi bir projeniz yok!\nBir tane eklemeyi düşünün! !new_project komutunu kullanabilirsiniz.')
 
+# ✅ PROJEYE BECERİ EKLEME
 @bot.command(name='skills')
 async def skills(ctx):
     user_id = ctx.author.id
     projects = manager.get_projects(user_id)
     if projects:
-        projects = [x[2] for x in projects]
+        projects_list = [x[2] for x in projects]
         await ctx.send('Bir beceri eklemek istediğiniz projeyi seçin')
-        await ctx.send("\n".join(projects))
+        await ctx.send("\n".join(projects_list))
 
         def check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel
 
         project_name = await bot.wait_for('message', check=check)
-        if project_name.content not in projects:
-            await ctx.send('Bu projeye sahip değilsiniz, lütfen tekrar deneyin! Beceri eklemek istediğiniz projeyi seçin')
+        if project_name.content not in projects_list:
+            await ctx.send('Bu projeye sahip değilsiniz, lütfen tekrar deneyin!')
             return
 
-        skills = [x[1] for x in manager.get_skills()]
+        skills_list = [x[1] for x in manager.get_skills()]
         await ctx.send('Bir beceri seçin')
-        await ctx.send("\n".join(skills))
+        await ctx.send("\n".join(skills_list))
 
         skill = await bot.wait_for('message', check=check)
-        if skill.content not in skills:
-            await ctx.send('Görünüşe göre seçtiğiniz beceri listede yok! Lütfen tekrar deneyin! Bir beceri seçin')
+        if skill.content not in skills_list:
+            await ctx.send('Görünüşe göre seçtiğiniz beceri listede yok! Lütfen tekrar deneyin!')
             return
 
         manager.insert_skill(user_id, project_name.content, skill.content)
-        await ctx.send(f'{skill.content} becerisi {project_name.content} projesine eklendi')
+        await ctx.send(f'✅ {skill.content} becerisi {project_name.content} projesine eklendi!')
     else:
         await ctx.send('Henüz herhangi bir projeniz yok!\nBir tane eklemeyi düşünün! !new_project komutunu kullanabilirsiniz.')
 
+# ✅ PROJE SİLME
 @bot.command(name='delete')
 async def delete_project(ctx):
     user_id = ctx.author.id
     projects = manager.get_projects(user_id)
     if projects:
-        projects = [x[2] for x in projects]
+        projects_list = [x[2] for x in projects]
         await ctx.send("Silmek istediğiniz projeyi seçin")
-        await ctx.send("\n".join(projects))
+        await ctx.send("\n".join(projects_list))
 
         def check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel
 
         project_name = await bot.wait_for('message', check=check)
-        if project_name.content not in projects:
+        if project_name.content not in projects_list:
             await ctx.send('Bu projeye sahip değilsiniz, lütfen tekrar deneyin!')
             return
 
         project_id = manager.get_project_id(project_name.content, user_id)
         manager.delete_project(user_id, project_id)
-        await ctx.send(f'{project_name.content} projesi veri tabanından silindi!')
+        await ctx.send(f'❌ {project_name.content} projesi veri tabanından silindi!')
     else:
         await ctx.send('Henüz herhangi bir projeniz yok!\nBir tane eklemeyi düşünün! !new_project komutunu kullanabilirsiniz.')
 
+# ✅ PROJE GÜNCELLEME
 @bot.command(name='update_projects')
 async def update_projects(ctx):
     user_id = ctx.author.id
     projects = manager.get_projects(user_id)
     if projects:
-        projects = [x[2] for x in projects]
+        projects_list = [x[2] for x in projects]
         await ctx.send("Güncellemek istediğiniz projeyi seçin")
-        await ctx.send("\n".join(projects))
+        await ctx.send("\n".join(projects_list))
 
         def check(msg):
             return msg.author == ctx.author and msg.channel == ctx.channel
 
-        project_name = await bot.wait_for('message', check=check)
-        if project_name.content not in projects:
+        project_name_msg = await bot.wait_for('message', check=check)
+        if project_name_msg.content not in projects_list:
             await ctx.send("Bir hata oldu! Lütfen güncellemek istediğiniz projeyi tekrar seçin:")
             return
 
+        project_id = manager.get_project_id(project_name_msg.content, user_id)
+
         await ctx.send("Projede neyi değiştirmek istersiniz?")
-        attributes = {'Proje adı': 'project_name', 'Açıklama': 'description', 'Proje bağlantısı': 'url', 'Proje durumu': 'status_id'}
+        attributes = {
+            'Proje adı': 'project_name',
+            'Açıklama': 'description',
+            'Proje bağlantısı': 'url',
+            'Proje durumu': 'status_id',
+            'Screenshot': 'screenshot'
+        }
         await ctx.send("\n".join(attributes.keys()))
 
-        attribute = await bot.wait_for('message', check=check)
-        if attribute.content not in attributes:
+        attribute_msg = await bot.wait_for('message', check=check)
+        if attribute_msg.content not in attributes:
             await ctx.send("Hata oluştu! Lütfen tekrar deneyin!")
             return
 
-        if attribute.content == 'Durum':
-            statuses = manager.get_statuses()
+        chosen_attribute = attributes[attribute_msg.content]
+
+        if chosen_attribute == 'status_id':
+            statuses = [x[0] for x in manager.get_statuses()]
             await ctx.send("Projeniz için yeni bir durum seçin")
-            await ctx.send("\n".join([x[0] for x in statuses]))
-            update_info = await bot.wait_for('message', check=check)
-            if update_info.content not in [x[0] for x in statuses]:
+            await ctx.send("\n".join(statuses))
+            update_info_msg = await bot.wait_for('message', check=check)
+            if update_info_msg.content not in statuses:
                 await ctx.send("Yanlış durum seçildi, lütfen tekrar deneyin!")
                 return
-            update_info = manager.get_status_id(update_info.content)
+            update_value = manager.get_status_id(update_info_msg.content)
         else:
-            await ctx.send(f"{attribute.content} için yeni bir değer girin")
-            update_info = await bot.wait_for('message', check=check)
-            update_info = update_info.content
+            await ctx.send(f"{attribute_msg.content} için yeni bir değer girin")
+            update_info_msg = await bot.wait_for('message', check=check)
+            update_value = update_info_msg.content
 
-        manager.update_projects(attributes[attribute.content], (update_info, project_name.content, user_id))
-        await ctx.send("Tüm işlemler tamamlandı! Proje güncellendi!")
+        manager.update_projects(chosen_attribute, update_value, project_id)
+        await ctx.send("✅ Tüm işlemler tamamlandı! Proje güncellendi!")
     else:
         await ctx.send('Henüz herhangi bir projeniz yok!\nBir tane eklemeyi düşünün! !new_project komutunu kullanabilirsiniz.')
 
